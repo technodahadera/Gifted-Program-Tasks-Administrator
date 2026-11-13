@@ -71,7 +71,7 @@ footer{color:#a0aeb9;font-size:10px;display:flex;justify-content:space-between;g
 <script>/* הגדרות ציבוריות לאתר GitHub Pages. אין לשמור כאן סיסמאות. */
 window.TECHNODA_CONFIG = {
   // כתובת שרת הנתונים הפעיל ב-Google Apps Script.
-  appsScriptUrl: 'https://script.google.com/macros/s/AKfycby0-xKaWTDnSwWKRcguUIT4um1N7ef3JRA7EguawPKXL8uR9sXxP46WSqR6-bZPOIyx/exec',
+  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbwhJFcz8BV5StpaKsU-Tr1E3V0OU3YIF7weDBHlwBr9D7tJIJiJzI9PKOqZcjZ9ST5S/exec',
   tasksSpreadsheetId: '15Y8xDYLAcSZQOdRWLYN0YixFhyS5loE3nAfW8F86ids',
   ganttSpreadsheetId: '1ny7FJG93cyTd4kCZvQtvjS09mUCGY1oBRZeukkUiFec',
   staff: [
@@ -317,104 +317,4 @@ function render(){const focus=document.activeElement?.id==='task-search';const p
 function toast(msg,fail=false){const el=$('#toast');if(!el)return;el.textContent=msg;el.className='toast visible '+(fail?'toast-error':'');setTimeout(()=>{if(el.textContent===msg)el.classList.remove('visible');},4200);}
 async function refresh(notify=false){if(state.mode==='local'){state.updatedAt=new Date();render();if(notify)toast('התצוגה רועננה. המידע נשמר בדפדפן זה.');return;}
  try{const data=await API.loadData();state.data=data.needsInit?{...state.data,needsInit:true}:data;state.updatedAt=new Date();render();if(notify)toast('נתוני הצוות עודכנו');}
- catch(e){toast(e.message,true);}
-}
-async function mutate(fn,success){if(state.busy)return;state.busy=true;try{await fn();if(state.mode==='local')saveLocal();state.modal='';await refresh();toast(success);}catch(e){toast(e.message,true);}finally{state.busy=false;}}
-function fakeEvent(taskId,msg,assId=''){state.data.updates.unshift({id:API.makeId('U'),taskId,assignmentId:assId,author:state.page==='manager'?'מנהל התכנית':myMember()?.name,date:new Date().toISOString(),type:'note',message:msg});}
-async function updateAssignmentFlow(id,type){const a=state.data.assignments.find(a=>a.id===id);if(!a)return;const t=state.data.tasks.find(t=>t.id===a.taskId);if(state.mode==='live'&&state.role!=='manager'&&a.assigneeId!==myMember()?.id){toast('אפשר לעדכן רק משימה שלך.',true);return;}
- if(type==='submit' && a.status==='submitted')return;
- const options=type==='start'?{status:'in_progress',progress:Math.max(10,Number(a.progress)||0),completedAt:''}:type==='submit'?{status:'submitted',progress:100,completedAt:new Date().toISOString()}:null;
- if(!options)return;
- await mutate(async()=>{if(state.mode==='local'){Object.assign(a,options,{updatedAt:new Date().toISOString()});fakeEvent(t.id,type==='submit'?'המשימה הוגשה לאישור המנהל':'תחילת עבודה',a.id);}else await API.updateAssignment(a,options);},type==='submit'?'המשימה הוגשה לאישור המנהל':'המשימה הועברה לביצוע');
-}
-async function approveFlow(id,isYes){const a=state.data.assignments.find(x=>x.id===id);if(!a||!isManager())return;
- const answer=isYes?'':prompt('מה נדרש להשלים לפני אישור? (הערה שתופיע לצוות)');if(answer===null)return;
- await mutate(async()=>{if(state.mode==='local'){
-   state.data.approvals.push({id:API.makeId('P'),assignmentId:a.id,taskId:a.taskId,decision:isYes?'approved':'returned',managerEmail:'מנהל התכנית',at:new Date().toISOString(),submissionKey:a.completedAt,note:answer});
-   if(!isYes){a.status='in_progress';a.completedAt='';a.lastNote=answer;}fakeEvent(a.taskId,isYes?'המנהל אישר את הביצוע':'המשימה הוחזרה לטיפול: '+answer,a.id);
- }else await API.approve(a,isYes,answer);},isYes?'הביצוע אושר. המשימה נצבעת בירוק לאחר אישור כל האחראים.':'המשימה הוחזרה לטיפול');
-}
-function taskFormObject(form){const f=new FormData(form);const ids=[...new Set([...form.querySelectorAll('input[name=member]:checked')].map(e=>e.value).concat(state.modal==='edit'?getAss(state.selected).map(a=>a.assigneeId):[]))];const result={title:String(f.get('title')||'').trim(),description:String(f.get('description')||'').trim(),priority:String(f.get('priority')||'medium'),dueDate:String(f.get('dueDate')||''),managerNotes:String(f.get('managerNotes')||'').trim(),tags:String(f.get('tags')||'').trim(),order:String(f.get('order')||'1'),link:String(f.get('link')||'').trim(),checkpoints:JSON.stringify(String(f.get('checkpoints')||'').split('\n').map(s=>s.trim()).filter(Boolean)),archived:form.elements.archived?.checked?'true':''};
- return {result,ids,files:[...form.querySelector('input[name=attachments]').files]};}
-async function submitTaskForm(form){if(!isManager()){toast('רק מנהל יכול ליצור ולערוך משימות.',true);return;}
- const {result,ids,files}=taskFormObject(form),edit=state.modal==='edit',old=edit?state.data.tasks.find(x=>x.id===state.selected):null;
- if(!result.title||!result.dueDate){toast('יש למלא שם משימה ותאריך יעד.',true);return;}if(!ids.length){toast('יש לבחור לפחות איש צוות אחד.',true);return;}
- await mutate(async()=>{
-  let taskId;if(edit){taskId=old.id;const newIds=ids.filter(id=>!getAss(old.id).some(a=>a.assigneeId===id));if(state.mode==='local'){Object.assign(old,result);newIds.forEach(id=>state.data.assignments.push({id:API.makeId('A'),taskId,assigneeId:id,assigneeName:person(id).name,status:'todo',progress:'0',updatedAt:new Date().toISOString(),completedAt:'',lastNote:''}));}else{await API.editTask(old,result);if(newIds.length)await API.addAssignees(taskId,newIds);}}
-  else{if(state.mode==='local'){
-    taskId=API.makeId('D');state.data.tasks.push({id:taskId,...result,createdAt:new Date().toISOString(),createdBy:'מנהל התכנית'});ids.forEach(id=>state.data.assignments.push({id:API.makeId('A'),taskId,assigneeId:id,assigneeName:person(id).name,status:'todo',progress:'0',updatedAt:new Date().toISOString(),completedAt:'',lastNote:''}));
-   }else taskId=await API.createTask({...result,assignees:ids});}
-  if(files.length){if(state.mode==='live'){for(const f of files)await API.uploadFile(f,taskId);}else{toast('המשימה נשמרה. צירוף קבצים יופעל לאחר חיבור אחסון משותף.');}}
- },edit?'פרטי המשימה נשמרו':'המשימה נוצרה ונשמרה בדפדפן; הסנכרון לצוות יוגדר בהמשך');
-}
-async function submitUpdate(form){const t=state.selected;const message=String(new FormData(form).get('message')||'').trim();if(!message)return;
- await mutate(async()=>{if(state.mode==='local')fakeEvent(t,message,myAss(state.data.tasks.find(x=>x.id===t))?.id||'');else await API.addUpdate({taskId:t,assignmentId:myAss(state.data.tasks.find(x=>x.id===t))?.id||'',message});},'העדכון נשלח ויוצג לכל הצוות');
-}
-async function submitProgress(form){const t=state.data.tasks.find(t=>t.id===state.selected),a=myAss(t);if(!a)return;const progress=Number(new FormData(form).get('progress')||0);if(a.status==='submitted'){toast('המשימה כבר הוגשה לאישור.',true);return;}
- await mutate(async()=>{if(state.mode==='local'){Object.assign(a,{status:progress?'in_progress':'todo',progress:String(progress),updatedAt:new Date().toISOString()});}else await API.updateAssignment(a,{status:progress?'in_progress':'todo',progress:String(progress),completedAt:''});},'ההתקדמות עודכנה');
-}
-async function fileUpload(input){const f=input.files[0];if(!f||!state.selected)return;
- if(state.mode==='local'){toast('צירוף קובץ זמין לאחר חיבור אחסון משותף.',true);return;}
- await mutate(async()=>{const result=await API.uploadFile(f,state.selected,myAss(state.data.tasks.find(t=>t.id===state.selected))?.id||'');if(result.failed.length)toast('הקובץ הועלה, אך השיתוף נכשל לחלק מאנשי הצוות.',true);},'הקובץ צורף למשימה');
-}
-async function extendDeadline(taskId){if(!isManager())return;const task=state.data.tasks.find(x=>x.id===taskId);const input=[...document.querySelectorAll('input[data-extension]')].find(x=>x.dataset.extension===taskId);if(!task||!input)return;const newDate=input.value;if(!/^\d{4}-\d{2}-\d{2}$/.test(newDate)){toast('יש לבחור תאריך יעד תקין.',true);return;}if(newDate<=task.dueDate){toast('להארכה יש לבחור תאריך מאוחר יותר מתאריך היעד הנוכחי.',true);return;}await mutate(async()=>{if(state.mode==='local'){const prev=task.dueDate;task.dueDate=newDate;task.updatedAt=new Date().toISOString();fakeEvent(task.id,`המנהל האריך את תאריך היעד מ-${prev} ל-${newDate}`);state.data.activity.push({id:API.makeId('E'),taskId:task.id,assignmentId:'',actor:'מנהל התכנית',event:'edited',details:`הארכת תאריך יעד: ${prev} ← ${newDate}`,at:new Date().toISOString()});}else await API.editTask(task,{dueDate:newDate});},'תאריך היעד הוארך בהצלחה');}
-function exportBackup(){const content={version:3,exportedAt:new Date().toISOString(),...Object.fromEntries(['tasks','assignments','updates','files','approvals','activity'].map(key=>[key,state.data[key]||[]]))};const blob=new Blob([JSON.stringify(content,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='technoda-manager-backup-'+TODAY()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);}
-async function importBackup(file){try{if(!file||file.size>10*1024*1024)throw Error('קובץ הגיבוי גדול מדי או חסר.');const content=JSON.parse(await file.text());for(const k of ['tasks','assignments','updates','files','approvals','activity'])if(!Array.isArray(content[k]))throw Error('קובץ הגיבוי אינו מכיל את נתוני המערכת הנדרשים.');if(!confirm('פעולה זו תחליף את המשימות השמורות בדפדפן הזה. להמשיך?'))return;const fresh=blankData();for(const k of ['tasks','assignments','updates','files','approvals','activity'])fresh[k]=content[k];state.data=fresh;saveLocal();render();toast('הגיבוי נטען בהצלחה.');}catch(e){toast(e.message,true);}}
-async function onAction(el){const action=el.dataset.action;if(!action)return;
- if(action==='exportData'){exportBackup();return;}
- if(action==='extend'){await extendDeadline(el.dataset.task);return;}
- if(action==='login'){return;}
- if(action==='logout'){return;}
- if(action==='initialize'){await mutate(async()=>{await API.initialize();},'מבנה הגיליון הוכן. אפשר להתחיל!');return;}
- if(action==='refresh'){await refresh(true);return;}
- if(action==='fullscreen'){if(document.fullscreenElement)document.exitFullscreen?.();else document.documentElement.requestFullscreen?.();return;}
- if(action==='teamFilter'){state.filter=el.dataset.value;render();return;}
- if(action==='managerFilter'){state.managerFilter=el.dataset.value;render();return;}
- if(action==='roster'){if(state.page==='manager'){state.managerFilter=el.dataset.value;window.scrollTo({top:380,behavior:'smooth'});}else state.filter='mine';render();return;}
- if(action==='monthPrev'){changeMonth(-1);return;}if(action==='monthNext'){changeMonth(1);return;}
- if(action==='ganttFull'){state.modal='gantt';render();return;}
- if(action==='create'){state.selected=null;state.modal='create';render();return;}
- if(action==='edit'){state.selected=el.dataset.task;state.modal='edit';render();return;}
- if(action==='detail'){state.selected=el.dataset.task;state.modal='detail';render();return;}
- if(action==='closeLayer'||action==='closeModal'){state.modal='';render();return;}
- if(action==='start'||action==='submit'){await updateAssignmentFlow(el.dataset.assignment,action);return;}
- if(action==='approve'||action==='return'){await approveFlow(el.dataset.assignment,action==='approve');return;}
-}
-document.addEventListener('click',async e=>{const el=e.target.closest('[data-action]');if(!el)return;if(el.dataset.action==='closeLayer'&&e.target!==el)return;e.preventDefault();try{await onAction(el);}catch(err){toast(err.message,true);}});
-document.addEventListener('submit',async e=>{if(!['task-form','update-form','progress-form','login-form'].includes(e.target.id))return;e.preventDefault();if(state.busy)return;try{if(e.target.id==='login-form'){const d=new FormData(e.target);const login=await API.connect({actorId:String(d.get('actorId')),pin:String(d.get('pin'))});state.user=login.profile;state.role=login.role;state.mode='live';state.modal='';await refresh(true);}else if(e.target.id==='task-form')await submitTaskForm(e.target);else if(e.target.id==='update-form')await submitUpdate(e.target);else await submitProgress(e.target);}catch(err){toast(err.message,true);}});
-document.addEventListener('change',e=>{if(e.target.id==='demo-person'){state.demoUser=e.target.value;render();}if(e.target.id==='day-picker'){state.day=e.target.value;render();}if(e.target.id==='manager-person'){state.managerFilter=e.target.value;render();}if(e.target.id==='detail-upload')fileUpload(e.target);if(e.target.id==='import-data')importBackup(e.target.files[0]);});
-document.addEventListener('input',e=>{if(e.target.id==='task-search'){state.search=e.target.value;render();}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.modal){state.modal='';render();}});
-// Manager login is automatic. Never silently switch to local mode on connection failure.
-async function startManagerLive(){
-  state.mode='live';
-  state.data=blankData();
-  state.user={name:'מנהל התכנית'};
-  state.role='manager';
-  state.updatedAt=new Date();
-  render();
-  try{
-    let result;
-    try{result=await API.restore();}catch(e){result=null;}
-    if(!result || result.role!=='manager')result=await API.connect({actorId:'manager',pin:''});
-    state.user=result.profile;
-    state.role=result.role;
-    await refresh();
-    if(state.data.needsInit)toast('מבנה הגיליון דורש אתחול. אין להוסיף משימות לפני בדיקת החיבור.',true);
-  }catch(e){
-    state.data=blankData();
-    state.data.needsInit=false;
-    state.role='guest';
-    render();
-    toast('החיבור ל-Google Sheets נכשל: '+e.message,true);
-    const warning=document.createElement('div');
-    warning.setAttribute('role','alert');
-    warning.style.cssText='position:fixed;z-index:99999;inset:auto 12px 12px;background:#fff0ef;color:#8b1b15;border:2px solid #d93c32;border-radius:12px;padding:16px;font:700 16px Rubik,Arial;text-align:center;box-shadow:0 5px 25px #0003';
-    warning.textContent='לא ניתן להתחבר ל-Google Sheets. לא ניתן לשמור משימות כרגע. '+e.message;
-    document.body.appendChild(warning);
-  }
-}
-startManagerLive();
-})();
-</script>
-</body></html>
+ catch(e){toast(e.message,

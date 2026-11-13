@@ -70,8 +70,8 @@ footer{color:#a0aeb9;font-size:10px;display:flex;justify-content:space-between;g
 <body data-page="manager"><div id="app"></div>
 <script>/* הגדרות ציבוריות לאתר GitHub Pages. אין לשמור כאן סיסמאות. */
 window.TECHNODA_CONFIG = {
-  // כתובת השרת תישמר לשלב החיבור הבא. גרסת מנהל זו שומרת כרגע נתונים בדפדפן בלבד.
-  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbwQcA8qak3gQzYiftPnBngBI1Dr_DPRHxf1iR0RjnbK_ejdNquePn5_JPcJTAo8J9-S/exec',
+  // כתובת שרת הנתונים הפעיל ב-Google Apps Script.
+  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbwhJFcz8BV5StpaKsU-Tr1E3V0OU3YIF7weDBHlwBr9D7tJIJiJzI9PKOqZcjZ9ST5S/exec',
   tasksSpreadsheetId: '15Y8xDYLAcSZQOdRWLYN0YixFhyS5loE3nAfW8F86ids',
   ganttSpreadsheetId: '1ny7FJG93cyTd4kCZvQtvjS09mUCGY1oBRZeukkUiFec',
   staff: [
@@ -218,7 +218,7 @@ const getFiles=taskId=>(state.data.files||[]).filter(f=>f.taskId===taskId);
 const getUpdates=taskId=>(state.data.updates||[]).filter(u=>u.taskId===taskId).sort((a,b)=>b.date.localeCompare(a.date));
 const approvalFor=a=>(state.data.approvals||[]).filter(p=>p.assignmentId===a.id).sort((x,y)=>y.at.localeCompare(x.at))[0];
 const isApproved=a=>{const p=approvalFor(a);return a.status==='submitted'&&!!a.completedAt&&p?.decision==='approved'&&p.submissionKey===a.completedAt;};
-const isManager=()=>state.page==='manager'&&(state.mode==='local'||state.role==='manager');
+const isManager=()=>state.page==='manager'&&state.role==='manager';
 const myMember=()=>state.mode==='local'?person(state.demoUser):members.find(p=>p.id===state.user?.memberId);
 const myAss=task=>getAss(task.id).find(a=>a.assigneeId===myMember()?.id);
 function statusOf(t){
@@ -385,8 +385,36 @@ document.addEventListener('submit',async e=>{if(!['task-form','update-form','pro
 document.addEventListener('change',e=>{if(e.target.id==='demo-person'){state.demoUser=e.target.value;render();}if(e.target.id==='day-picker'){state.day=e.target.value;render();}if(e.target.id==='manager-person'){state.managerFilter=e.target.value;render();}if(e.target.id==='detail-upload')fileUpload(e.target);if(e.target.id==='import-data')importBackup(e.target.files[0]);});
 document.addEventListener('input',e=>{if(e.target.id==='task-search'){state.search=e.target.value;render();}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.modal){state.modal='';render();}});
-render();
-// This manager-only edition runs without login, and persists locally in this browser.
+// Manager login is automatic. Never silently switch to local mode on connection failure.
+async function startManagerLive(){
+  state.mode='live';
+  state.data=blankData();
+  state.user={name:'מנהל התכנית'};
+  state.role='manager';
+  state.updatedAt=new Date();
+  render();
+  try{
+    let result;
+    try{result=await API.restore();}catch(e){result=null;}
+    if(!result || result.role!=='manager')result=await API.connect({actorId:'manager',pin:''});
+    state.user=result.profile;
+    state.role=result.role;
+    await refresh();
+    if(state.data.needsInit)toast('מבנה הגיליון דורש אתחול. אין להוסיף משימות לפני בדיקת החיבור.',true);
+  }catch(e){
+    state.data=blankData();
+    state.data.needsInit=false;
+    state.role='guest';
+    render();
+    toast('החיבור ל-Google Sheets נכשל: '+e.message,true);
+    const warning=document.createElement('div');
+    warning.setAttribute('role','alert');
+    warning.style.cssText='position:fixed;z-index:99999;inset:auto 12px 12px;background:#fff0ef;color:#8b1b15;border:2px solid #d93c32;border-radius:12px;padding:16px;font:700 16px Rubik,Arial;text-align:center;box-shadow:0 5px 25px #0003';
+    warning.textContent='לא ניתן להתחבר ל-Google Sheets. לא ניתן לשמור משימות כרגע. '+e.message;
+    document.body.appendChild(warning);
+  }
+}
+startManagerLive();
 })();
 </script>
 </body></html>

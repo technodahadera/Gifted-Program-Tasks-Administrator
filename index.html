@@ -563,7 +563,32 @@ async function onAction(el){const action=el.dataset.action;if(!action)return;
  if(action==='login'){return;}
  if(action==='logout'){return;}
  if(action==='initialize'){await mutate(async()=>{await API.initialize();},'מבנה הגיליון הוכן. אפשר להתחיל!');return;}
- if(action==='refresh'){await refresh(true);return;}
+ if(action==='refresh'){
+   if(window.technodaManualRefreshPending)return;
+   window.technodaManualRefreshPending=true;
+   const button=el;
+   const previousTitle=button.title;
+   button.disabled=true;
+   button.title='מעדכן נתונים מ-Google Sheets…';
+   button.setAttribute('aria-busy','true');
+   button.style.opacity='0.55';
+   button.style.cursor='wait';
+   toast('מעדכן עכשיו את המשימות מ-Google Sheets…');
+   try{
+     await Promise.race([
+       refresh(false),
+       new Promise((_,reject)=>setTimeout(()=>reject(new Error('השרת לא השיב בתוך 25 שניות. בדוק את החיבור ונסה שוב.')),25000))
+     ]);
+     toast('המשימות עודכנו בהצלחה מ-Google Sheets · '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}));
+   }catch(err){
+     toast('הרענון נכשל: '+(err?.message||String(err)),true);
+   }finally{
+     window.technodaManualRefreshPending=false;
+     const current=document.querySelector('[data-action="refresh"]');
+     if(current){current.disabled=false;current.removeAttribute('aria-busy');current.style.opacity='';current.style.cursor='';current.title=previousTitle||'רענון תצוגה';}
+   }
+   return;
+ }
  if(action==='fullscreen'){if(document.fullscreenElement)document.exitFullscreen?.();else document.documentElement.requestFullscreen?.();return;}
  if(action==='teamFilter'){state.filter=el.dataset.value;render();return;}
  if(action==='managerFilter'){state.managerFilter=el.dataset.value;render();return;}

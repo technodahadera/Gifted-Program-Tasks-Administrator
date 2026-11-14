@@ -188,8 +188,15 @@ footer{color:#a0aeb9;font-size:10px;display:flex;justify-content:space-between;g
 .gantt-progress-track>span{display:block;height:100%;border-radius:8px;background:#329d8b;transition:width .2s}
 .gantt-task-meta b{font-weight:800;color:inherit}
 @media(max-width:680px){.manager-top-clock{font-size:10px;white-space:normal;max-width:160px}.manager-top-clock small{font-size:9px}}
+</style><style id="technoda-manager-wait-style">
+#technoda-manager-wait{position:fixed;inset:0;z-index:99999;background:rgba(13,35,52,.48);display:none;align-items:center;justify-content:center;direction:rtl;font-family:Rubik,Arial,sans-serif;cursor:wait}
+#technoda-manager-wait.active{display:flex}
+#technoda-manager-wait .wait-card{background:white;color:#183b50;border-radius:18px;padding:28px 35px;box-shadow:0 20px 65px #0003;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;max-width:calc(100vw - 32px)}
+#technoda-manager-wait .wait-spinner{width:38px;height:38px;border:4px solid #d8eaf0;border-top-color:#2687a9;border-radius:50%;animation:technodaWaitSpin .85s linear infinite}
+#technoda-manager-wait strong{font-size:16px}#technoda-manager-wait small{font-size:12px;color:#637a89}
+@keyframes technodaWaitSpin{to{transform:rotate(360deg)}}
 </style></head>
-<body data-page="manager"><div id="app"></div>
+<body data-page="manager"><div id="technoda-manager-wait" role="status" aria-live="polite" aria-busy="true"><div class="wait-card"><div class="wait-spinner" aria-hidden="true"></div><strong>מבצע את הפעולה, נא להמתין...</strong><small>אין צורך ללחוץ שוב. הפעולה תסתיים בעוד רגע.</small></div></div><div id="app"></div>
 <script>/* הגדרות ציבוריות לאתר GitHub Pages. אין לשמור כאן סיסמאות. */
 window.TECHNODA_CONFIG = {
   // כתובת שרת הנתונים הפעיל ב-Google Apps Script.
@@ -493,11 +500,13 @@ function render(){const focus=document.activeElement?.id==='task-search';const p
  document.body.classList.toggle('modal-open',!!state.modal);
 }
 function toast(msg,fail=false){const el=$('#toast');if(!el)return;el.textContent=msg;el.className='toast visible '+(fail?'toast-error':'');setTimeout(()=>{if(el.textContent===msg)el.classList.remove('visible');},4200);}
-async function refresh(notify=false,silent=false){if(state.mode==='local'){state.updatedAt=new Date();render();if(notify)toast('התצוגה רועננה. המידע נשמר בדפדפן זה.');return;}
+async function refresh(notify=false,silent=false){if(notify)setManagerWait(true);try{ return await refreshCore(notify,silent); }finally{if(notify)setManagerWait(false);} }
+async function refreshCore(notify=false,silent=false){if(state.mode==='local'){state.updatedAt=new Date();render();if(notify)toast('התצוגה רועננה. המידע נשמר בדפדפן זה.');return;}
  try{const data=await API.loadData();if(!data||!Array.isArray(data.tasks)||!Array.isArray(data.assignments))throw new Error('השרת לא החזיר נתוני משימות תקינים.');state.data=data.needsInit?{...state.data,needsInit:true}:data;state.connectionConfirmed=true;state.connectionError='';state.updatedAt=new Date();render();if(notify)toast('נתוני Google Sheets עודכנו');}
  catch(e){state.connectionConfirmed=false;state.connectionError=e.message;render();if(!silent)toast(e.message,true);throw e;}
 }
-async function mutate(fn,success){if(state.busy)return;if(state.mode==='live'&&!state.connectionConfirmed){toast('אין חיבור מאומת ל-Google Sheets. לא נשמרו שינויים.',true);return;}state.busy=true;try{await fn();if(state.mode==='local')saveLocal();state.modal='';await refresh();toast(success);}catch(e){toast(e.message,true);}finally{state.busy=false;}}
+function setManagerWait(visible){const el=document.getElementById('technoda-manager-wait');if(el)el.classList.toggle('active',!!visible);}
+async function mutate(fn,success){if(state.busy)return;if(state.mode==='live'&&!state.connectionConfirmed){toast('אין חיבור מאומת ל-Google Sheets. לא נשמרו שינויים.',true);return;}state.busy=true;setManagerWait(true);try{await fn();if(state.mode==='local')saveLocal();state.modal='';await refresh();toast(success);}catch(e){toast(e.message,true);}finally{state.busy=false;setManagerWait(false);}}
 function fakeEvent(taskId,msg,assId=''){state.data.updates.unshift({id:API.makeId('U'),taskId,assignmentId:assId,author:state.page==='manager'?'מנהל התכנית':myMember()?.name,date:new Date().toISOString(),type:'note',message:msg});}
 async function updateAssignmentFlow(id,type){const a=state.data.assignments.find(a=>a.id===id);if(!a)return;const t=state.data.tasks.find(t=>t.id===a.taskId);if(state.mode==='live'&&state.role!=='manager'&&a.assigneeId!==myMember()?.id){toast('אפשר לעדכן רק משימה שלך.',true);return;}
  if(type==='submit' && a.status==='submitted')return;
